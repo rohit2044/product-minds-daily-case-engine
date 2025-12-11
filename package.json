@@ -1,0 +1,40 @@
+{
+  "name": "product-minds-case-engine",
+  "version": "1.0.0",
+  "description": "Autonomous case study generation engine for PM interview prep",
+  "type": "module",
+  "main": "scripts/case-generator.js",
+  "scripts": {
+    "generate": "node scripts/run-generator.js",
+    "generate:dry": "node scripts/run-generator.js --dry-run",
+    "generate:multi": "node scripts/run-generator.js --count=5",
+    "check-buffer": "node scripts/check-buffer.js",
+    "schedule": "node scripts/schedule-cases.js",
+    "report": "node scripts/report-status.js",
+    "seed": "node scripts/seed-initial-cases.js",
+    "test:sources": "node scripts/test-sources.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.27.0",
+    "@supabase/supabase-js": "^2.45.0",
+    "rss-parser": "^3.13.0"
+  },
+  "devDependencies": {
+    "dotenv": "^16.4.5"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/your-username/product-minds-case-engine"
+  },
+  "keywords": [
+    "product-management",
+    "case-studies",
+    "interview-prep",
+    "automation"
+  ],
+  "author": "Product Minds",
+  "license": "MIT"
+}
