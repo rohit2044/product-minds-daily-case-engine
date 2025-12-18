@@ -1,3 +1,4 @@
+import 'dotenv/config';
 /**
  * Product Minds - Case Study Generator
  * 
@@ -177,15 +178,26 @@ export async function generateDailyCases(options = {}) {
       }
 
     } catch (error) {
-      console.error(`❌ Failed: ${error.message}`);
-      
+      console.error(`❌ Failed with full error:`, JSON.stringify(error, null, 2));
+      console.error(`Error type:`, typeof error);
+      console.error(`Error keys:`, Object.keys(error || {}));
+
+      if (error?.response) {
+        console.error(`Response status:`, error.response.status);
+        console.error(`Response data:`, error.response.data);
+      }
+
+      if (error?.cause) {
+        console.error(`Cause:`, error.cause);
+      }
+
       await updateLogEntry(logEntry.id, {
         status: 'failed',
-        error_message: error.message,
+        error_message: JSON.stringify(error),
       });
 
       results.failed.push({
-        error: error.message,
+        error: JSON.stringify(error),
         logId: logEntry.id,
       });
     }

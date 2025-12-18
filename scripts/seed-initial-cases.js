@@ -1,3 +1,4 @@
+import 'dotenv/config';
 /**
  * Seed Initial Cases
  * 
@@ -65,7 +66,8 @@ async function seed() {
         }
         
       } catch (error) {
-        console.error(`  ❌ Error: ${error.message}`);
+        console.error(`  ❌ Error:`, error);
+        console.error(`Stack trace:`, error.stack);
         results.failed++;
       }
     }
