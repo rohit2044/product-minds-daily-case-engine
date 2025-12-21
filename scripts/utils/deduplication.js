@@ -5,12 +5,6 @@
  * and prevent repetitive content.
  */
 
-import Anthropic from '@anthropic-ai/sdk';
-
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
-});
-
 // Similarity threshold - cases above this are considered duplicates
 const SIMILARITY_THRESHOLD = 0.85;
 
@@ -18,16 +12,14 @@ const SIMILARITY_THRESHOLD = 0.85;
 const COMPANY_COOLDOWN_DAYS = 60;
 
 /**
- * Generate embedding for content using Claude
- * Note: In production, you might use OpenAI's embedding API or 
- * a dedicated embedding service for cost efficiency
+ * Generate embedding for content
+ * Note: This uses a feature-based approach. For production, consider using
+ * a dedicated embedding service like OpenAI's text-embedding-3-small or
+ * a local model.
  */
 export async function generateEmbedding(content) {
-  // For now, we'll use a hash-based approach as Claude doesn't have a native embedding API
-  // In production, use OpenAI's text-embedding-3-small or similar
-  
-  // This is a placeholder that creates a pseudo-embedding from content features
-  // Replace with actual embedding API call in production
+  // This is a feature-based approach that creates a pseudo-embedding from content features
+  // For better accuracy, consider integrating with an embedding API
   const features = extractFeatures(content);
   return features;
 }
@@ -37,10 +29,10 @@ export async function generateEmbedding(content) {
  */
 function extractFeatures(content) {
   const text = content.toLowerCase();
-  
+
   // Extract key signals (this is a simplified approach)
   const features = [];
-  
+
   // Company/brand mentions
   const companies = [
     'apple', 'google', 'amazon', 'meta', 'facebook', 'microsoft', 'netflix',
@@ -48,7 +40,7 @@ function extractFeatures(content) {
     'twitter', 'instagram', 'tiktok', 'snapchat', 'linkedin', 'pinterest'
   ];
   companies.forEach(c => features.push(text.includes(c) ? 1 : 0));
-  
+
   // Topic signals
   const topics = [
     'growth', 'retention', 'churn', 'pricing', 'monetization', 'launch',
@@ -58,7 +50,7 @@ function extractFeatures(content) {
     'regulation', 'expansion', 'international', 'partnership'
   ];
   topics.forEach(t => features.push(text.includes(t) ? 1 : 0));
-  
+
   // Framework mentions
   const frameworks = [
     'rice', 'ice', 'jobs to be done', 'jtbd', 'north star', 'aarrr',
@@ -66,13 +58,13 @@ function extractFeatures(content) {
     'tam', 'sam', 'som', 'pmf', 'product market fit'
   ];
   frameworks.forEach(f => features.push(text.includes(f) ? 1 : 0));
-  
+
   // Normalize to 1536 dimensions (standard embedding size)
   // Pad with zeros
   while (features.length < 1536) {
     features.push(0);
   }
-  
+
   return features;
 }
 
@@ -81,19 +73,19 @@ function extractFeatures(content) {
  */
 function cosineSimilarity(a, b) {
   if (a.length !== b.length) return 0;
-  
+
   let dotProduct = 0;
   let normA = 0;
   let normB = 0;
-  
+
   for (let i = 0; i < a.length; i++) {
     dotProduct += a[i] * b[i];
     normA += a[i] * a[i];
     normB += b[i] * b[i];
   }
-  
+
   if (normA === 0 || normB === 0) return 0;
-  
+
   return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
 }
 
@@ -109,7 +101,7 @@ export async function checkDuplication(supabase, embedding, companyName) {
       .eq('company_name', companyName)
       .gte('created_at', new Date(Date.now() - COMPANY_COOLDOWN_DAYS * 24 * 60 * 60 * 1000).toISOString())
       .limit(1);
-    
+
     if (recentCompanyCases && recentCompanyCases.length > 0) {
       return {
         isDuplicate: true,
@@ -120,7 +112,7 @@ export async function checkDuplication(supabase, embedding, companyName) {
       };
     }
   }
-  
+
   // Check 2: Content similarity via embeddings
   // Note: This uses Supabase's vector similarity search
   // If your Supabase doesn't have pgvector, use the fallback approach
@@ -131,7 +123,7 @@ export async function checkDuplication(supabase, embedding, companyName) {
       company: null,
       days_lookback: 90,
     });
-    
+
     if (!error && similarCases && similarCases.length > 0) {
       const mostSimilar = similarCases[0];
       return {
@@ -147,7 +139,7 @@ export async function checkDuplication(supabase, embedding, companyName) {
     console.log('  Vector search not available, using fallback dedup');
     return await fallbackDeduplication(supabase, embedding, companyName);
   }
-  
+
   return {
     isDuplicate: false,
     reason: null,
@@ -166,16 +158,16 @@ async function fallbackDeduplication(supabase, features, companyName) {
     .select('id, title, story_content, company_name')
     .gte('created_at', new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString())
     .limit(100);
-  
+
   if (!recentCases || recentCases.length === 0) {
     return { isDuplicate: false, reason: null, similarity: 0 };
   }
-  
+
   // Compare features
   for (const existingCase of recentCases) {
     const existingFeatures = extractFeatures(existingCase.story_content);
     const similarity = cosineSimilarity(features, existingFeatures);
-    
+
     if (similarity > SIMILARITY_THRESHOLD) {
       return {
         isDuplicate: true,
@@ -186,7 +178,7 @@ async function fallbackDeduplication(supabase, features, companyName) {
       };
     }
   }
-  
+
   return { isDuplicate: false, reason: null, similarity: 0 };
 }
 
@@ -198,16 +190,16 @@ export async function getDeduplicationStats(supabase) {
     .from('generation_logs')
     .select('status, similarity_score')
     .gte('created_at', new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString());
-  
+
   if (!logs) return null;
-  
+
   const total = logs.length;
   const duplicates = logs.filter(l => l.status === 'skipped_duplicate').length;
   const avgSimilarity = duplicates > 0
     ? logs.filter(l => l.status === 'skipped_duplicate')
         .reduce((sum, l) => sum + (l.similarity_score || 0), 0) / duplicates
     : 0;
-  
+
   return {
     totalAttempts: total,
     duplicatesSkipped: duplicates,

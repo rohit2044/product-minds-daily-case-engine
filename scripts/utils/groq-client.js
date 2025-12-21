@@ -1,31 +1,33 @@
 /**
- * Claude Client Utility
- * 
- * Centralized Anthropic Claude API client for case study generation.
+ * Groq Client Utility
+ *
+ * Centralized Groq API client for case study generation using Llama models.
  */
 
-import Anthropic from '@anthropic-ai/sdk';
+import Groq from 'groq-sdk';
 
 // Validate environment variable
-const apiKey = process.env.ANTHROPIC_API_KEY;
+const apiKey = process.env.GROQ_API_KEY;
 
 if (!apiKey) {
-  throw new Error('Missing ANTHROPIC_API_KEY environment variable');
+  throw new Error('Missing GROQ_API_KEY environment variable');
 }
 
-// Initialize Anthropic client
-export const anthropic = new Anthropic({
+// Initialize Groq client
+export const groq = new Groq({
   apiKey: apiKey,
 });
 
 // Model configuration
+// Available models: llama-3.3-70b-versatile, llama-3.1-8b-instant, llama3-70b-8192
 export const MODEL_CONFIG = {
-  model: 'claude-sonnet-4-20250514',
-  maxTokens: 2000,
-  // Pricing per million tokens (as of 2024)
+  model: process.env.GROQ_MODEL || 'llama-3.3-70b-versatile',
+  maxTokens: 1500, // Safe limit for case study generation (output ~800-1000 tokens typical)
+  // Groq pricing (as of 2024) - much cheaper than Claude
+  // llama-3.3-70b-versatile: $0.59 input, $0.79 output per million tokens
   pricing: {
-    input: 0.003,   // $3 per million input tokens
-    output: 0.015,  // $15 per million output tokens
+    input: 0.00059,   // $0.59 per million input tokens
+    output: 0.00079,  // $0.79 per million output tokens
   },
 };
 
@@ -75,24 +77,29 @@ Generate a case study with the following structure. Respond ONLY with valid JSON
   const startTime = Date.now();
 
   try {
-    const response = await anthropic.messages.create({
+    const response = await groq.chat.completions.create({
       model: MODEL_CONFIG.model,
       max_tokens: MODEL_CONFIG.maxTokens,
-      system: systemPrompt,
       messages: [
+        {
+          role: 'system',
+          content: systemPrompt,
+        },
         {
           role: 'user',
           content: userPrompt,
         }
       ],
+      temperature: 0.7, // Balanced creativity for storytelling
+      response_format: { type: 'json_object' }, // Request JSON response
     });
 
     const duration = Date.now() - startTime;
-    const tokensUsed = response.usage.input_tokens + response.usage.output_tokens;
+    const tokensUsed = (response.usage?.prompt_tokens || 0) + (response.usage?.completion_tokens || 0);
     const costUsd = calculateCost(response.usage);
 
     // Parse the response
-    const content = response.content[0].text;
+    const content = response.choices[0]?.message?.content;
     const caseStudy = parseJsonResponse(content);
 
     // Add metadata
@@ -106,13 +113,13 @@ Generate a case study with the following structure. Respond ONLY with valid JSON
     return caseStudy;
 
   } catch (error) {
-    console.error('Claude API error:', error.message);
+    console.error('Groq API error:', error.message);
     throw error;
   }
 }
 
 /**
- * Parse JSON from Claude's response
+ * Parse JSON from LLM response
  */
 function parseJsonResponse(content) {
   try {
@@ -124,7 +131,7 @@ function parseJsonResponse(content) {
       throw new Error('No JSON found in response');
     }
   } catch (parseError) {
-    console.error('Failed to parse Claude response:', content.substring(0, 500));
+    console.error('Failed to parse LLM response:', content?.substring(0, 500));
     throw new Error(`JSON parse failed: ${parseError.message}`);
   }
 }
@@ -133,8 +140,9 @@ function parseJsonResponse(content) {
  * Calculate cost based on token usage
  */
 function calculateCost(usage) {
-  const inputCost = (usage.input_tokens * MODEL_CONFIG.pricing.input) / 1000;
-  const outputCost = (usage.output_tokens * MODEL_CONFIG.pricing.output) / 1000;
+  if (!usage) return 0;
+  const inputCost = (usage.prompt_tokens || 0) * MODEL_CONFIG.pricing.input / 1000;
+  const outputCost = (usage.completion_tokens || 0) * MODEL_CONFIG.pricing.output / 1000;
   return inputCost + outputCost;
 }
 
@@ -142,7 +150,7 @@ function calculateCost(usage) {
  * Simple completion for utility tasks
  */
 export async function simpleCompletion(prompt, maxTokens = 500) {
-  const response = await anthropic.messages.create({
+  const response = await groq.chat.completions.create({
     model: MODEL_CONFIG.model,
     max_tokens: maxTokens,
     messages: [
@@ -151,15 +159,16 @@ export async function simpleCompletion(prompt, maxTokens = 500) {
         content: prompt,
       }
     ],
+    temperature: 0.3, // Lower temperature for utility tasks
   });
 
-  return response.content[0].text;
+  return response.choices[0]?.message?.content || '';
 }
 
 /**
- * Generate embeddings using Claude (text features extraction)
+ * Generate embeddings using LLM (text features extraction)
  * Note: This is a simplified approach. For production, consider using
- * OpenAI's embedding API or a dedicated embedding service.
+ * a dedicated embedding service like OpenAI's text-embedding-3-small.
  */
 export async function generateTextFeatures(text) {
   const prompt = `Extract the key themes and concepts from this text as a comma-separated list of keywords (max 20):
@@ -222,4 +231,4 @@ export function validateCaseStudy(caseStudy) {
   };
 }
 
-export default anthropic;
+export default groq;

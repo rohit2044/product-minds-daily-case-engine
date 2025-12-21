@@ -1,0 +1,146 @@
+# Product Minds - Daily Case Study Generator
+# 
+# This workflow runs daily to:
+# 1. Scrape content from the scheduled source type
+# 2. Transform it into an engaging case study via Groq (Llama)
+# 3. Store in Supabase with deduplication checks
+# 4. Schedule for upcoming days
+
+name: Daily Case Study Generator
+
+on:
+  # Run at midnight UTC every day
+#  TODO: UNCOMMENT BELOW 2 lines to execute
+#  schedule:
+#    - cron: '0 0 * * *'
+  
+  # Allow manual trigger for testing
+  workflow_dispatch:
+    inputs:
+      count:
+        description: 'Number of cases to generate'
+        required: false
+        default: '1'
+        type: string
+      source_type:
+        description: 'Override source type (leave empty for automatic)'
+        required: false
+        default: ''
+        type: choice
+        options:
+          - ''
+          - 'historical_wikipedia'
+          - 'historical_archive'
+          - 'live_news_techcrunch'
+          - 'live_news_hackernews'
+          - 'company_blog'
+          - 'company_sec_filing'
+          - 'framework_classic'
+      dry_run:
+        description: 'Dry run (do not save to database)'
+        required: false
+        default: false
+        type: boolean
+
+env:
+  NODE_VERSION: '20'
+
+jobs:
+  generate-cases:
+    name: Generate Daily Case Studies
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Check buffer status
+        id: buffer
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: |
+          BUFFER=$(node scripts/check-buffer.js)
+          echo "buffer_days=$BUFFER" >> $GITHUB_OUTPUT
+          echo "📊 Current buffer: $BUFFER days of content ready"
+      
+      - name: Determine generation count
+        id: count
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            COUNT="${{ github.event.inputs.count }}"
+          else
+            # Generate more cases if buffer is low
+            BUFFER="${{ steps.buffer.outputs.buffer_days }}"
+            if [ "$BUFFER" -lt 7 ]; then
+              COUNT=3
+            elif [ "$BUFFER" -lt 14 ]; then
+              COUNT=2
+            else
+              COUNT=1
+            fi
+          fi
+          echo "count=$COUNT" >> $GITHUB_OUTPUT
+          echo "📝 Will generate $COUNT case(s)"
+      
+      - name: Generate case studies
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          GROQ_MODEL: ${{ vars.GROQ_MODEL || 'llama-3.3-70b-versatile' }}
+        run: |
+          ARGS="--count=${{ steps.count.outputs.count }}"
+          
+          if [ "${{ github.event.inputs.source_type }}" != "" ]; then
+            ARGS="$ARGS --source=${{ github.event.inputs.source_type }}"
+          fi
+          
+          if [ "${{ github.event.inputs.dry_run }}" == "true" ]; then
+            ARGS="$ARGS --dry-run"
+          fi
+          
+          node scripts/run-generator.js $ARGS
+      
+      - name: Schedule upcoming days
+        if: github.event.inputs.dry_run != 'true'
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: node scripts/schedule-cases.js
+      
+      - name: Report results
+        if: always()
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: |
+          echo "## 📊 Generation Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          node scripts/report-status.js >> $GITHUB_STEP_SUMMARY
+
+  notify-on-failure:
+    name: Notify on Failure
+    runs-on: ubuntu-latest
+    needs: generate-cases
+    if: failure()
+    
+    steps:
+      - name: Send failure notification
+        run: |
+          echo "⚠️ Case generation failed!"
+          echo "Check the workflow logs for details."
+          # Add Slack/Discord/email notification here if desired
+          # curl -X POST -H 'Content-type: application/json' \
+          #   --data '{"text":"⚠️ Product Minds case generation failed!"}' \
+          #   ${{ secrets.SLACK_WEBHOOK_URL }}
