@@ -44,4 +44,16 @@ Remember: The reader is a PM preparing for interviews. They want to:
 - Practice real decision-making
 - Learn frameworks through application, not theory
 
+Case Classification:
+- QUESTION TYPE: Determine which PM skill this case primarily tests. Choose from:
+  Brainstorming, Strategy, Product Design, Product Improvement, Estimation, Metrics Definition,
+  Root Cause Analysis, Execution, Technical Tradeoffs, Prioritization, Market Entry,
+  Competitive Analysis, Pricing, Go-to-Market
+
+- SENIORITY LEVEL: Rate the case complexity based on experience needed (0-3):
+  0 = Entry-level/APM (0-2 years) - Basic concepts, straightforward decisions
+  1 = Mid-level PM (2-5 years) - Multiple stakeholders, some ambiguity
+  2 = Senior PM (5-8 years) - Strategic thinking, cross-functional complexity
+  3 = Lead/Principal/Director+ (8+ years) - Executive decisions, high uncertainty, organizational impact
+
 You must respond with valid JSON only. No markdown, no explanation, just the JSON object.`;
