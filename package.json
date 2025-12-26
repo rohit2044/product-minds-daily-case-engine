@@ -15,12 +15,12 @@
     "test:sources": "node scripts/test-sources.js"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.27.0",
     "@supabase/supabase-js": "^2.45.0",
+    "groq-sdk": "^0.37.0",
     "rss-parser": "^3.13.0"
   },
   "devDependencies": {
-    "dotenv": "^16.4.5"
+    "dotenv": "^16.6.1"
   },
   "engines": {
     "node": ">=20.0.0"

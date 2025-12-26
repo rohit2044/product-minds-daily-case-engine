@@ -1,15 +1,16 @@
+import 'dotenv/config';
 /**
  * Product Minds - Case Study Generator
  * 
  * Main orchestrator that:
  * 1. Determines which source to scrape based on day rotation
  * 2. Fetches raw content from the source
- * 3. Transforms it via Claude API into a story-driven case study
+ * 3. Transforms it via Groq API (Llama) into a story-driven case study
  * 4. Checks for duplicates
  * 5. Stores in Supabase
  */
 
-import Anthropic from '@anthropic-ai/sdk';
+import Groq from 'groq-sdk';
 import { createClient } from '@supabase/supabase-js';
 import { fetchFromWikipedia } from './sources/wikipedia.js';
 import { fetchFromTechCrunch } from './sources/techcrunch.js';
@@ -24,14 +25,25 @@ import { checkDuplication, generateEmbedding } from './utils/deduplication.js';
 import crypto from 'crypto';
 
 // Initialize clients
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
+const groq = new Groq({
+  apiKey: process.env.GROQ_API_KEY,
 });
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_SERVICE_KEY
 );
+
+// Model configuration
+const MODEL_CONFIG = {
+  model: process.env.GROQ_MODEL || 'llama-3.3-70b-versatile',
+  maxTokens: 1500,
+  // Groq pricing for llama-3.3-70b-versatile
+  pricing: {
+    input: 0.00059,   // $0.59 per million input tokens
+    output: 0.00079,  // $0.79 per million output tokens
+  },
+};
 
 // Source rotation configuration
 const SOURCE_ROTATION = {
@@ -55,13 +67,14 @@ export async function generateDailyCases(options = {}) {
   } = options;
 
   const dayOfWeek = new Date().getDay();
-  const sourceConfig = forceSourceType 
+  const sourceConfig = forceSourceType
     ? Object.values(SOURCE_ROTATION).find(s => s.type === forceSourceType)
     : SOURCE_ROTATION[dayOfWeek];
 
   console.log(`\n🚀 Starting case generation`);
   console.log(`📅 Day of week: ${dayOfWeek} (${sourceConfig.name})`);
   console.log(`🎯 Target cases: ${count}`);
+  console.log(`🤖 Using model: ${MODEL_CONFIG.model}`);
   console.log(`${dryRun ? '🧪 DRY RUN MODE' : '💾 Will save to database'}\n`);
 
   const results = {
@@ -72,9 +85,9 @@ export async function generateDailyCases(options = {}) {
 
   for (let i = 0; i < count; i++) {
     console.log(`\n--- Generating case ${i + 1}/${count} ---`);
-    
+
     const logEntry = await createLogEntry(sourceConfig.type);
-    
+
     try {
       // Step 1: Fetch raw content from source
       console.log(`📥 Fetching from ${sourceConfig.name}...`);
@@ -82,7 +95,7 @@ export async function generateDailyCases(options = {}) {
       const rawContent = await sourceConfig.fetcher();
       const fetchDuration = Date.now() - startFetch;
       console.log(`✅ Fetched in ${fetchDuration}ms`);
-      
+
       if (!rawContent || !rawContent.content) {
         throw new Error('No content returned from source');
       }
@@ -94,8 +107,8 @@ export async function generateDailyCases(options = {}) {
         scrape_duration_ms: fetchDuration,
       });
 
-      // Step 2: Transform via Claude
-      console.log(`🤖 Transforming with Claude...`);
+      // Step 2: Transform via Groq (Llama)
+      console.log(`🤖 Transforming with ${MODEL_CONFIG.model}...`);
       const startTransform = Date.now();
       const caseStudy = await transformToCaseStudy(rawContent, sourceConfig.type);
       const transformDuration = Date.now() - startTransform;
@@ -112,7 +125,7 @@ export async function generateDailyCases(options = {}) {
 
       if (duplicateCheck.isDuplicate) {
         console.log(`⚠️ Skipped - too similar to existing case (${duplicateCheck.similarity.toFixed(2)} similarity)`);
-        
+
         await updateLogEntry(logEntry.id, {
           status: 'skipped_duplicate',
           similarity_score: duplicateCheck.similarity,
@@ -150,6 +163,8 @@ export async function generateDailyCases(options = {}) {
             company_name: rawContent.companyName || caseStudy.company_name,
             industry: caseStudy.industry,
             difficulty: caseStudy.difficulty,
+            question_type: caseStudy.question_type,
+            seniority_level: caseStudy.seniority_level,
             frameworks_applicable: caseStudy.frameworks_applicable,
             tags: caseStudy.tags,
             content_embedding: embedding,
@@ -177,15 +192,26 @@ export async function generateDailyCases(options = {}) {
       }
 
     } catch (error) {
-      console.error(`❌ Failed: ${error.message}`);
-      
+      console.error(`❌ Failed with full error:`, JSON.stringify(error, null, 2));
+      console.error(`Error type:`, typeof error);
+      console.error(`Error keys:`, Object.keys(error || {}));
+
+      if (error?.response) {
+        console.error(`Response status:`, error.response.status);
+        console.error(`Response data:`, error.response.data);
+      }
+
+      if (error?.cause) {
+        console.error(`Cause:`, error.cause);
+      }
+
       await updateLogEntry(logEntry.id, {
         status: 'failed',
-        error_message: error.message,
+        error_message: JSON.stringify(error),
       });
 
       results.failed.push({
-        error: error.message,
+        error: JSON.stringify(error),
         logId: logEntry.id,
       });
     }
@@ -202,7 +228,7 @@ export async function generateDailyCases(options = {}) {
 }
 
 /**
- * Transform raw content into a case study using Claude
+ * Transform raw content into a case study using Groq (Llama)
  */
 async function transformToCaseStudy(rawContent, sourceType) {
   const sourceTypePromptAdditions = {
@@ -237,6 +263,8 @@ Generate a case study with the following structure. Respond ONLY with valid JSON
   "challenge_prompt": "The question for the reader (50-100 words)",
   "hints": ["hint1", "hint2"],
   "difficulty": "beginner|intermediate|advanced",
+  "question_type": "One of: Brainstorming, Strategy, Product Design, Product Improvement, Estimation, Metrics Definition, Root Cause Analysis, Execution, Technical Tradeoffs, Prioritization, Market Entry, Competitive Analysis, Pricing, Go-to-Market",
+  "seniority_level": 0-3 (0=Entry-level/APM, 1=Mid-level PM, 2=Senior PM, 3=Lead/Principal/Director+),
   "frameworks_applicable": ["Framework1", "Framework2"],
   "industry": "Industry category",
   "tags": ["tag1", "tag2", "tag3"],
@@ -244,28 +272,36 @@ Generate a case study with the following structure. Respond ONLY with valid JSON
 }`;
 
   const startTime = Date.now();
-  
-  const response = await anthropic.messages.create({
-    model: 'claude-sonnet-4-20250514',
-    max_tokens: 2000,
+
+  const response = await groq.chat.completions.create({
+    model: MODEL_CONFIG.model,
+    max_tokens: MODEL_CONFIG.maxTokens,
     messages: [
+      {
+        role: 'system',
+        content: STORYTELLING_PROMPT,
+      },
       {
         role: 'user',
         content: userPrompt,
       }
     ],
-    system: STORYTELLING_PROMPT,
+    temperature: 0.7,
+    response_format: { type: 'json_object' },
   });
 
   const duration = Date.now() - startTime;
-  const tokensUsed = response.usage.input_tokens + response.usage.output_tokens;
-  // Claude Sonnet pricing: $3 input, $15 output per million tokens
-  const costUsd = (response.usage.input_tokens * 0.003 + response.usage.output_tokens * 0.015) / 1000;
+  const promptTokens = response.usage?.prompt_tokens || 0;
+  const completionTokens = response.usage?.completion_tokens || 0;
+  const tokensUsed = promptTokens + completionTokens;
+
+  // Calculate cost using Groq pricing
+  const costUsd = (promptTokens * MODEL_CONFIG.pricing.input + completionTokens * MODEL_CONFIG.pricing.output) / 1000;
 
   // Parse the response
-  const content = response.content[0].text;
+  const content = response.choices[0]?.message?.content;
   let caseStudy;
-  
+
   try {
     // Try to extract JSON from the response
     const jsonMatch = content.match(/\{[\s\S]*\}/);
@@ -275,7 +311,7 @@ Generate a case study with the following structure. Respond ONLY with valid JSON
       throw new Error('No JSON found in response');
     }
   } catch (parseError) {
-    console.error('Failed to parse Claude response:', content.substring(0, 500));
+    console.error('Failed to parse LLM response:', content?.substring(0, 500));
     throw new Error(`JSON parse failed: ${parseError.message}`);
   }
 
@@ -284,6 +320,7 @@ Generate a case study with the following structure. Respond ONLY with valid JSON
     tokensUsed,
     costUsd,
     durationMs: duration,
+    model: MODEL_CONFIG.model,
   };
 
   return caseStudy;
@@ -331,7 +368,7 @@ export async function getBufferStatus() {
  */
 export async function scheduleUpcomingDays(daysAhead = 14) {
   const scheduled = [];
-  
+
   for (let i = 0; i < daysAhead; i++) {
     const targetDate = new Date();
     targetDate.setDate(targetDate.getDate() + i);

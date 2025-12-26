@@ -1,3 +1,4 @@
+import 'dotenv/config';
 /**
  * Seed Initial Cases
  * 
@@ -65,7 +66,8 @@ async function seed() {
         }
         
       } catch (error) {
-        console.error(`  ❌ Error: ${error.message}`);
+        console.error(`  ❌ Error:`, error);
+        console.error(`Stack trace:`, error.stack);
         results.failed++;
       }
     }
@@ -107,9 +109,9 @@ async function scheduleAllCases() {
     return;
   }
   
-  // Schedule starting from tomorrow
+  // Schedule starting from today
   const startDate = new Date();
-  startDate.setDate(startDate.getDate() + 1);
+  startDate.setDate(startDate.getDate());
   
   for (let i = 0; i < unscheduled.length; i++) {
     const targetDate = new Date(startDate);
