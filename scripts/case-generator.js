@@ -22,6 +22,7 @@ import { fetchFromArchiveOrg } from './sources/archive-org.js';
 import { generateFrameworkCase } from './sources/framework-cases.js';
 import { STORYTELLING_PROMPT } from './prompts/storytelling-system-prompt.js';
 import { checkDuplication, generateEmbedding } from './utils/deduplication.js';
+import { generateVisuals } from './utils/chart-generator.js';
 import crypto from 'crypto';
 
 // Initialize clients
@@ -141,7 +142,19 @@ export async function generateDailyCases(options = {}) {
         continue;
       }
 
-      // Step 4: Save to database
+      // Step 4: Generate visuals (charts/illustrations)
+      console.log(`📊 Generating visuals...`);
+      const tempCaseId = crypto.randomUUID(); // Temporary ID for storage path
+      let generatedCharts = [];
+      try {
+        generatedCharts = await generateVisuals(caseStudy.visual_specs, tempCaseId);
+        console.log(`✅ Generated ${generatedCharts.length} visual(s)`);
+      } catch (visualError) {
+        console.warn(`⚠️ Visual generation failed (non-fatal):`, visualError.message);
+        // Continue without visuals - they're optional
+      }
+
+      // Step 5: Save to database
       if (!dryRun) {
         console.log(`💾 Saving to database...`);
         const contentHash = crypto
@@ -167,6 +180,8 @@ export async function generateDailyCases(options = {}) {
             seniority_level: caseStudy.seniority_level,
             frameworks_applicable: caseStudy.frameworks_applicable,
             tags: caseStudy.tags,
+            asked_in_company: caseStudy.asked_in_company,
+            charts: generatedCharts,
             content_embedding: embedding,
             content_hash: contentHash,
             generation_log_id: logEntry.id,
@@ -188,7 +203,8 @@ export async function generateDailyCases(options = {}) {
         results.generated.push(savedCase);
       } else {
         console.log(`🧪 [Dry run] Would save: "${caseStudy.title}"`);
-        results.generated.push(caseStudy);
+        console.log(`🧪 [Dry run] Would include ${generatedCharts.length} visual(s)`);
+        results.generated.push({ ...caseStudy, charts: generatedCharts });
       }
 
     } catch (error) {
@@ -263,12 +279,26 @@ Generate a case study with the following structure. Respond ONLY with valid JSON
   "challenge_prompt": "The question for the reader (50-100 words)",
   "hints": ["hint1", "hint2"],
   "difficulty": "beginner|intermediate|advanced",
-  "question_type": "One of: Brainstorming, Strategy, Product Design, Product Improvement, Estimation, Metrics Definition, Root Cause Analysis, Execution, Technical Tradeoffs, Prioritization, Market Entry, Competitive Analysis, Pricing, Go-to-Market",
+  "question_type": "One of: Root Cause Analysis (RCA), Product Design (Open-ended), Metrics & Measurement, Feature Prioritization, Strategy & Vision, Pricing Strategy, Launch Decision, Growth Strategy, Trade-off Analysis, A/B Test Design",
   "seniority_level": 0-3 (0=Entry-level/APM, 1=Mid-level PM, 2=Senior PM, 3=Lead/Principal/Director+),
   "frameworks_applicable": ["Framework1", "Framework2"],
   "industry": "Industry category",
   "tags": ["tag1", "tag2", "tag3"],
-  "company_name": "Company name if identifiable"
+  "company_name": "Company name if identifiable",
+  "asked_in_company": "Tech company where this case type is likely asked (Google, Meta, Amazon, Apple, Microsoft, Netflix, Uber, Airbnb, Stripe, etc.) or null",
+  "visual_specs": [
+    {
+      "visual_type": "chart or illustration",
+      "chart_type": "bar|line|doughnut|horizontalBar|radar (if visual_type is chart)",
+      "illustration_type": "abstract|icon_composition|gradient_scene (if visual_type is illustration)",
+      "title": "Title for the visual",
+      "caption": "Brief description of what this visual shows",
+      "labels": ["Label1", "Label2"] (for charts),
+      "datasets": [{"label": "Series", "data": [10, 20, 30]}] (for charts),
+      "colors": ["#hex1", "#hex2"] (suggested colors),
+      "description": "For illustrations: mood, elements, style description"
+    }
+  ]
 }`;
 
   const startTime = Date.now();

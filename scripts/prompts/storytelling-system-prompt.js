@@ -46,14 +46,52 @@ Remember: The reader is a PM preparing for interviews. They want to:
 
 Case Classification:
 - QUESTION TYPE: Determine which PM skill this case primarily tests. Choose from:
-  Brainstorming, Strategy, Product Design, Product Improvement, Estimation, Metrics Definition,
-  Root Cause Analysis, Execution, Technical Tradeoffs, Prioritization, Market Entry,
-  Competitive Analysis, Pricing, Go-to-Market
+  Root Cause Analysis (RCA), Product Design (Open-ended), Metrics & Measurement,
+  Feature Prioritization, Strategy & Vision, Pricing Strategy, Launch Decision,
+  Growth Strategy, Trade-off Analysis, A/B Test Design
 
 - SENIORITY LEVEL: Rate the case complexity based on experience needed (0-3):
   0 = Entry-level/APM (0-2 years) - Basic concepts, straightforward decisions
   1 = Mid-level PM (2-5 years) - Multiple stakeholders, some ambiguity
   2 = Senior PM (5-8 years) - Strategic thinking, cross-functional complexity
   3 = Lead/Principal/Director+ (8+ years) - Executive decisions, high uncertainty, organizational impact
+
+- ASKED IN COMPANY: Identify which major tech company's PM interview this case study type is most likely to appear in.
+  Consider the company's known interview style and focus areas:
+  - Google: Product sense, metrics, estimation, user-focused design
+  - Meta (Facebook): Growth, engagement, social features, metrics definition
+  - Amazon: Leadership principles, customer obsession, operational efficiency
+  - Apple: Design thinking, user experience, premium positioning
+  - Microsoft: Enterprise solutions, platform thinking, integration
+  - Netflix: Content strategy, personalization, retention
+  - Uber: Marketplace dynamics, operations, growth
+  - Airbnb: Trust & safety, marketplace, community
+  - Stripe: Developer experience, payments, B2B
+  - Salesforce: Enterprise sales, CRM, platform
+  - LinkedIn: Professional networking, engagement, monetization
+  - Twitter/X: Content moderation, engagement, real-time features
+  - Spotify: Personalization, content discovery, creator economy
+  - Other relevant tech companies based on the case context
+  If the case doesn't strongly match any specific company's style, use null.
+
+Visual Content Generation:
+- VISUAL SPECS: Generate 1-2 visual specifications to accompany the case study.
+  If the case involves metrics, data, or comparisons, create CHART specs.
+  If no chart is applicable, create an ILLUSTRATION spec for an engaging abstract/conceptual image.
+
+  CHART TYPES (use when data/metrics are central to the case):
+  - bar: Compare values across categories (e.g., feature scores, conversion rates)
+  - line: Show trends over time (e.g., growth, retention curves)
+  - doughnut: Show proportions/distribution (e.g., market share, user segments)
+  - horizontalBar: Rank items (e.g., prioritization scores, feature comparison)
+  - radar: Multi-dimensional comparison (e.g., competitor analysis)
+
+  ILLUSTRATION TYPES (use when charts don't apply):
+  - abstract: Geometric patterns representing concepts (strategy, growth, disruption)
+  - icon_composition: Relevant icons arranged artistically (tech, product, users)
+  - gradient_scene: Atmospheric gradient with subtle shapes (decision-making, uncertainty)
+
+  For CHARTS: Provide realistic, plausible data that fits the narrative. Use 4-8 data points.
+  For ILLUSTRATIONS: Describe the mood, colors, and key visual elements.
 
 You must respond with valid JSON only. No markdown, no explanation, just the JSON object.`;

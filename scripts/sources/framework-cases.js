@@ -42,6 +42,7 @@ The team has rough estimates on reach (what % of users would use it), engineerin
     ],
     difficulty: 'beginner',
     tags: ['prioritization', 'roadmap', 'stakeholder-management'],
+    asked_in_company: 'Google',
   },
   {
     framework: 'ICE',
@@ -71,6 +72,7 @@ Most have some data supporting them, but confidence levels vary wildly. The team
     ],
     difficulty: 'beginner',
     tags: ['prioritization', 'growth', 'experimentation'],
+    asked_in_company: 'Meta',
   },
   
   // STRATEGY FRAMEWORKS
@@ -101,6 +103,7 @@ The feature roadmap built for "eat healthier" doesn't address these actual jobs.
     ],
     difficulty: 'intermediate',
     tags: ['strategy', 'user-research', 'retention', 'positioning'],
+    asked_in_company: 'Airbnb',
   },
   {
     framework: 'North Star Metric',
@@ -131,6 +134,7 @@ Last quarter, the team optimized for MAU. Signups went up 40%, but paid conversi
     ],
     difficulty: 'intermediate',
     tags: ['metrics', 'strategy', 'alignment', 'okrs'],
+    asked_in_company: 'Spotify',
   },
   
   // ANALYTICS FRAMEWORKS
@@ -162,6 +166,7 @@ The PM suspects they're optimizing the wrong part of the funnel but needs to mak
     ],
     difficulty: 'beginner',
     tags: ['metrics', 'growth', 'funnel', 'analytics'],
+    asked_in_company: 'Uber',
   },
   {
     framework: 'Cohort Analysis',
@@ -196,6 +201,7 @@ The company is celebrating "growth" while the core product is degrading.`,
     ],
     difficulty: 'intermediate',
     tags: ['analytics', 'retention', 'metrics', 'diagnosis'],
+    asked_in_company: 'Netflix',
   },
   
   // EXPERIMENTATION
@@ -229,6 +235,7 @@ The data tells different stories depending on how you slice it.`,
     ],
     difficulty: 'advanced',
     tags: ['experimentation', 'statistics', 'decision-making', 'analytics'],
+    asked_in_company: 'Amazon',
   },
   
   // MARKET ANALYSIS
@@ -264,6 +271,7 @@ But they're also hearing competitors claim the same market with different number
     ],
     difficulty: 'intermediate',
     tags: ['market-sizing', 'fundraising', 'strategy', 'business-case'],
+    asked_in_company: 'Google',
   },
   
   // DISCOVERY
@@ -296,6 +304,7 @@ They need a way to visualize the opportunity space and propose experiments witho
     ],
     difficulty: 'advanced',
     tags: ['discovery', 'product-strategy', 'hypothesis', 'research'],
+    asked_in_company: 'Microsoft',
   },
   
   // PRODUCT-MARKET FIT
@@ -329,6 +338,7 @@ The data suggests they have PMF for a segment, not the whole market.`,
     ],
     difficulty: 'intermediate',
     tags: ['product-market-fit', 'strategy', 'segmentation', 'growth'],
+    asked_in_company: 'Stripe',
   },
 ];
 
@@ -389,6 +399,7 @@ TAGS: ${selected.tags.join(', ')}
     difficulty: selected.difficulty,
     tags: selected.tags,
     hints: selected.hints,
+    asked_in_company: selected.asked_in_company,
   };
 }
 

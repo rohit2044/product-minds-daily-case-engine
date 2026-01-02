@@ -44,6 +44,8 @@ Deno.serve(async (req) => {
         seniority_level,
         frameworks_applicable,
         tags,
+        asked_in_company,
+        charts,
         scheduled_date
       `)
       .eq('scheduled_date', today)
@@ -129,6 +131,18 @@ The meeting with the executive team was scheduled for Monday morning.`,
     seniority_level: 1,
     frameworks_applicable: ["Funnel Analysis", "Customer Lifetime Value", "A/B Testing"],
     tags: ["conversion", "UX", "checkout", "growth"],
+    asked_in_company: "Amazon",
+    charts: [
+      {
+        id: "chart-1",
+        type: "chart",
+        chart_type: "bar",
+        title: "Checkout Funnel Drop-off Rates",
+        caption: "User abandonment at each stage of the checkout process",
+        url: "https://quickchart.io/chart?c=%7B%22type%22%3A%22bar%22%2C%22data%22%3A%7B%22labels%22%3A%5B%22Cart%22%2C%22Registration%22%2C%22Payment%22%2C%22Confirmation%22%5D%2C%22datasets%22%3A%5B%7B%22label%22%3A%22Drop-off%20%25%22%2C%22data%22%3A%5B100%2C55%2C35%2C30%5D%2C%22backgroundColor%22%3A%22%234F46E5%22%7D%5D%7D%7D&w=600&h=400&bkg=white",
+        position: "after_story"
+      }
+    ],
     scheduled_date: new Date().toISOString().split('T')[0],
   }
 }
