@@ -2,7 +2,7 @@ import 'dotenv/config';
 /**
  * Seed Initial Cases
  * 
- * Generates the first 30 case studies to create a buffer before launch.
+ * Generates the first ~15 case studies to create a smaller buffer before launch.
  * Run this once during initial setup.
  * 
  * Usage: npm run seed
@@ -28,22 +28,21 @@ const SOURCE_TYPES = [
 
 async function seed() {
   console.log('🌱 Seeding initial case studies...\n');
-  console.log('This will generate ~30 cases across all source types.');
+  console.log('This will generate ~15 cases across all source types.');
   console.log('Estimated time: 10-15 minutes');
-  console.log('Estimated cost: ~$1-2 (Claude API)\n');
-  
+
   const results = {
     generated: 0,
     failed: 0,
     skipped: 0,
   };
   
-  // Generate ~4-5 cases per source type
+  // Generate ~2 cases per source type (3 for framework_classic)
   for (const sourceType of SOURCE_TYPES) {
     console.log(`\n📂 Generating cases from: ${sourceType}`);
     console.log('─'.repeat(50));
     
-    const casesPerType = sourceType === 'framework_classic' ? 5 : 4;
+    const casesPerType = sourceType === 'framework_classic' ? 3 : 2;
     
     for (let i = 0; i < casesPerType; i++) {
       try {
