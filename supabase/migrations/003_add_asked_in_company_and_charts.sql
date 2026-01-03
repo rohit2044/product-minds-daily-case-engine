@@ -1,17 +1,22 @@
--- Migration: Add charts column to case_studies table for storing chart/image metadata
--- Created: 2026-01-02
+-- Migration: Add asked_in_company and charts columns to case_studies table
+-- Merged from: 003_add_asked_in_company.sql, 004_update_question_type_values.sql, 005_add_charts_column.sql
 
--- Add charts column (JSONB array for storing chart/image specifications and URLs)
+-- Add asked_in_company column
+ALTER TABLE case_studies ADD COLUMN asked_in_company TEXT;
+
+-- Add charts column (JSONB array for chart/image metadata)
 ALTER TABLE case_studies ADD COLUMN charts JSONB DEFAULT '[]';
 
--- Add comment to describe the charts column structure
+-- Column comments
+COMMENT ON COLUMN case_studies.asked_in_company IS 'Name of the company where this case study question has been asked in PM interviews (e.g., Google, Meta, Amazon, etc.)';
 COMMENT ON COLUMN case_studies.charts IS 'Array of chart/image objects: [{id, type, title, url, caption, position, chart_type}]. Types: chart (bar, line, pie, funnel, etc.) or image (illustration, diagram, etc.)';
+COMMENT ON COLUMN case_studies.question_type IS 'Type of product management question: Root Cause Analysis (RCA), Product Design (Open-ended), Metrics & Measurement, Feature Prioritization, Strategy & Vision, Pricing Strategy, Launch Decision, Growth Strategy, Trade-off Analysis, A/B Test Design';
 
--- Create index for querying cases with/without charts efficiently
-CREATE INDEX idx_case_studies_has_charts
-ON case_studies ((jsonb_array_length(charts) > 0));
+-- Indexes
+CREATE INDEX idx_case_studies_asked_in_company ON case_studies(asked_in_company);
+CREATE INDEX idx_case_studies_has_charts ON case_studies ((jsonb_array_length(charts) > 0));
 
--- Update get_todays_case function to include charts
+-- Update get_todays_case function to include new columns
 CREATE OR REPLACE FUNCTION get_todays_case()
 RETURNS TABLE (
   id UUID,

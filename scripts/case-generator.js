@@ -46,7 +46,7 @@ const supabase = createClient(
 // Model configuration
 const MODEL_CONFIG = {
   model: process.env.GROQ_MODEL || 'llama-3.3-70b-versatile',
-  maxTokens: 1500,
+  maxTokens: 4000, // Increased for structured interview template output
   // Groq pricing for llama-3.3-70b-versatile
   pricing: {
     input: 0.00059,   // $0.59 per million input tokens
@@ -130,7 +130,9 @@ export async function generateDailyCases(options = {}) {
 
       // Step 3: Check for duplicates
       console.log(`🔍 Checking for duplicates...`);
-      const embedding = await generateEmbedding(caseStudy.story_content);
+      // Use what_happened + the_question for deduplication embedding
+      const contentForEmbedding = `${caseStudy.what_happened} ${caseStudy.the_question}`;
+      const embedding = await generateEmbedding(contentForEmbedding);
       const duplicateCheck = await checkDuplication(
         supabase,
         embedding,
@@ -172,17 +174,25 @@ export async function generateDailyCases(options = {}) {
         console.log(`💾 Saving to database...`);
         const contentHash = crypto
           .createHash('md5')
-          .update(caseStudy.story_content)
+          .update(contentForEmbedding)
           .digest('hex');
 
         const { data: savedCase, error } = await supabase
           .from('case_studies')
           .insert({
+            // Core content - new template structure
             title: caseStudy.title,
-            hook: caseStudy.hook,
-            story_content: caseStudy.story_content,
-            challenge_prompt: caseStudy.challenge_prompt,
-            hints: caseStudy.hints,
+            the_question: caseStudy.the_question,
+            read_time_minutes: caseStudy.read_time_minutes || 3,
+            what_happened: caseStudy.what_happened,
+            mental_model: caseStudy.mental_model,
+            answer_approach: caseStudy.answer_approach,
+            pushback_scenarios: caseStudy.pushback_scenarios,
+            summary: caseStudy.summary,
+            interviewer_evaluation: caseStudy.interviewer_evaluation || [],
+            common_mistakes: caseStudy.common_mistakes || [],
+            practice: caseStudy.practice,
+            // Metadata - preserved from original schema
             source_type: sourceConfig.type,
             source_url: rawContent.sourceUrl,
             source_title: rawContent.title,
@@ -191,10 +201,11 @@ export async function generateDailyCases(options = {}) {
             difficulty: caseStudy.difficulty,
             question_type: caseStudy.question_type,
             seniority_level: caseStudy.seniority_level,
-            frameworks_applicable: caseStudy.frameworks_applicable,
-            tags: caseStudy.tags,
+            frameworks_applicable: caseStudy.frameworks_applicable || [],
+            tags: caseStudy.tags || [],
             asked_in_company: caseStudy.asked_in_company,
             charts: generatedCharts,
+            // Deduplication
             content_embedding: embedding,
             content_hash: contentHash,
             generation_log_id: logEntry.id,
@@ -271,7 +282,7 @@ async function transformToCaseStudy(rawContent, sourceType) {
     'framework_classic': `This is a CLASSIC PM FRAMEWORK case. Add a modern twist while teaching the framework.`,
   };
 
-  const userPrompt = `Transform the following raw content into an engaging PM case study.
+  const userPrompt = `Transform the following raw content into an interview-ready PM case study.
 
 SOURCE TYPE: ${sourceType}
 COMPANY/SUBJECT: ${rawContent.companyName || 'Unknown'}
@@ -283,36 +294,7 @@ ${rawContent.content}
 
 ${sourceTypePromptAdditions[sourceType] || ''}
 
-Generate a case study with the following structure. Respond ONLY with valid JSON:
-
-{
-  "title": "A compelling, slightly provocative title",
-  "hook": "Opening 1-2 sentences that grab attention",
-  "story_content": "The main narrative (400-600 words, NO bullet points)",
-  "challenge_prompt": "The question for the reader (50-100 words)",
-  "hints": ["hint1", "hint2"],
-  "difficulty": "beginner|intermediate|advanced",
-  "question_type": "One of: Root Cause Analysis (RCA), Product Design (Open-ended), Metrics & Measurement, Feature Prioritization, Strategy & Vision, Pricing Strategy, Launch Decision, Growth Strategy, Trade-off Analysis, A/B Test Design",
-  "seniority_level": 0-3 (0=Entry-level/APM, 1=Mid-level PM, 2=Senior PM, 3=Lead/Principal/Director+),
-  "frameworks_applicable": ["Framework1", "Framework2"],
-  "industry": "Industry category",
-  "tags": ["tag1", "tag2", "tag3"],
-  "company_name": "Company name if identifiable",
-  "asked_in_company": "Tech company where this case type is likely asked (Google, Meta, Amazon, Apple, Microsoft, Netflix, Uber, Airbnb, Stripe, etc.) or null",
-  "visual_specs": [
-    {
-      "visual_type": "chart or illustration",
-      "chart_type": "bar|line|doughnut|horizontalBar|radar (if visual_type is chart)",
-      "illustration_type": "abstract|icon_composition|gradient_scene (if visual_type is illustration)",
-      "title": "Title for the visual",
-      "caption": "Brief description of what this visual shows",
-      "labels": ["Label1", "Label2"] (for charts),
-      "datasets": [{"label": "Series", "data": [10, 20, 30]}] (for charts),
-      "colors": ["#hex1", "#hex2"] (suggested colors),
-      "description": "For illustrations: mood, elements, style description"
-    }
-  ]
-}`;
+Generate a structured case study following the system prompt format. Respond ONLY with valid JSON.`;
 
   const startTime = Date.now();
 

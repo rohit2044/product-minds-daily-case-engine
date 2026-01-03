@@ -1,5 +1,5 @@
 // Supabase Edge Function: get-today's-case
-// 
+//
 // Returns today's scheduled case study for the frontend
 // Deploy with: supabase functions deploy get-today's-case
 
@@ -25,16 +25,22 @@ Deno.serve(async (req) => {
     // Get today's date in UTC
     const today = new Date().toISOString().split('T')[0]
 
-    // Fetch today's case study
+    // Fetch today's case study with new template structure
     const { data: caseStudy, error } = await supabase
       .from('case_studies')
       .select(`
         id,
         title,
-        hook,
-        story_content,
-        challenge_prompt,
-        hints,
+        the_question,
+        read_time_minutes,
+        what_happened,
+        mental_model,
+        answer_approach,
+        pushback_scenarios,
+        summary,
+        interviewer_evaluation,
+        common_mistakes,
+        practice,
         source_type,
         source_url,
         company_name,
@@ -93,56 +99,136 @@ Deno.serve(async (req) => {
   }
 })
 
-// Fallback case if nothing is scheduled
+// Fallback case if nothing is scheduled - using new template structure
 function getFallbackCase() {
   return {
     id: 'fallback',
-    title: "The $300 Million Button",
-    hook: "In 2009, a single form field was costing one company $300 million per year. The fix took less than a day.",
-    story_content: `Jared Spool had seen countless checkout flows in his career as a UX consultant, but the one he examined in early 2009 puzzled him. A major e-commerce retailer—one processing over $25 billion in annual transactions—had hired his team to investigate their climbing cart abandonment rate.
-
-The culprit wasn't hard to find. Right there, between the shopping cart and payment, sat an innocent-looking form: "Register or Login to continue."
-
-The retailer's logic seemed sound. Registered users returned more often. They had higher lifetime value. The marketing team could email them promotions. Every best practice document said to capture that email address.
-
-But Spool's team ran the numbers differently. They tracked users who hit that registration wall. 45% abandoned immediately. Of those who attempted to register, 60% used an email they'd forgotten the password for, got frustrated with recovery, and left. The "returning customer" login had a 75% failure rate on the first attempt.
-
-"People just wanted to buy a TV," one team member noted during the debrief. "We were asking them to enter a relationship."
-
-The proposed solution was radical for its time: remove the registration requirement entirely. Let people check out as guests. Add a soft prompt at the end: "Want to save your information for next time?"
-
-The pushback was immediate. Marketing protested losing email captures. The database team warned about duplicate customer records. The CEO questioned whether this was really worth the risk.
-
-Spool had the data, but data doesn't always win arguments. He needed to frame this as more than a UX fix—it was a business model question. What was more valuable: a forced registration that 45% of users abandoned, or a completed sale with an optional relationship?
-
-The meeting with the executive team was scheduled for Monday morning.`,
-    challenge_prompt: "You're Jared, about to present to skeptical executives. Marketing wants emails, the CEO wants ROI math, and you have one shot to make your case. How do you structure your argument? What metrics do you propose tracking to prove the change works? And how do you address the legitimate concern about losing customer data?",
-    hints: [
-      "Consider the difference between forced value exchange and earned trust",
-      "What's the actual conversion rate of those 'captured' emails into repeat purchases?",
-      "Think about the lifetime value calculation differently—what's the LTV of a customer who never completed their first purchase?"
+    title: "Root Cause Analysis: Best Buy's $300 Million Button",
+    the_question: "You're a PM consultant in 2009. A major e-commerce retailer's checkout page shows 45% abandonment at the registration wall. They want to know: should they remove the mandatory registration? How do you investigate and make a recommendation?",
+    read_time_minutes: 3,
+    what_happened: "Jared Spool's team discovered that a mandatory registration form was causing 45% cart abandonment. Users who tried to register often couldn't recover forgotten passwords (75% first-attempt failure). They replaced mandatory registration with guest checkout and an optional 'save info' prompt, resulting in $300M additional annual revenue.",
+    mental_model: {
+      flow: "Clarify → Scope → Decompose → Diagnose → Theorize → Validate → Solve",
+      intro: "Before diving in, here's how to think about Root Cause Analysis problems:",
+      steps: [
+        "Clarify the problem statement and success metrics",
+        "Scope the investigation boundaries",
+        "Decompose the funnel into measurable stages",
+        "Diagnose where the biggest drop-offs occur",
+        "Theorize potential causes for each drop-off",
+        "Validate theories with data and user research",
+        "Solve with targeted interventions"
+      ],
+      disclaimer: "This isn't a rigid script—it's how strong PMs naturally think through problems. Now let's see it in action."
+    },
+    answer_approach: [
+      {
+        part_number: 1,
+        title: "Clarify the Problem",
+        time_estimate: "1 min",
+        what_you_say: "Before I dive in, I'd like to understand a few things. When you say 45% abandonment, is that measured from cart page load to registration attempt, or from registration page load to completion?",
+        questions_to_ask: ["What's the current conversion rate?", "How is abandonment measured?", "What's the business impact in revenue?"],
+        thinking: "Cart abandonment → could be UX, could be pricing, could be trust → need to isolate the registration step specifically"
+      },
+      {
+        part_number: 2,
+        title: "Scope the Investigation",
+        time_estimate: "1 min",
+        what_you_say: "I want to focus specifically on the registration-to-payment transition since that's where the 45% drop occurs. I'll look at: user behavior data, error rates, and qualitative feedback.",
+        questions_to_ask: ["Do we have session recordings?", "What does support hear from frustrated users?"],
+        thinking: "Need to balance speed with thoroughness → focus on highest-impact stage first"
+      },
+      {
+        part_number: 3,
+        title: "Decompose the Funnel",
+        time_estimate: "1 min",
+        what_you_say: "Let me break down the registration step: New users attempting registration, existing users logging in, and password recovery flows. Each might have different failure modes.",
+        questions_to_ask: ["What % are new vs returning?", "What's the password reset rate?"],
+        thinking: "Registration → new user signup + returning user login + password recovery → each is a different problem"
+      },
+      {
+        part_number: 4,
+        title: "Diagnose Drop-off Points",
+        time_estimate: "1 min",
+        what_you_say: "Looking at the data: 60% of users who attempt registration are using previously registered emails, and 75% fail their first login attempt. This suggests password friction is the core issue.",
+        questions_to_ask: [],
+        thinking: "High password failure → users forget they registered → forced to recover → too much friction → abandon"
+      },
+      {
+        part_number: 5,
+        title: "Theorize Root Causes",
+        time_estimate: "1 min",
+        what_you_say: "I see three potential root causes: Users don't remember registering before, password recovery is too cumbersome, and the value exchange isn't clear—they just want to buy, not start a relationship.",
+        questions_to_ask: [],
+        thinking: "Mandatory registration = forced relationship → users want transactional, we're asking for commitment"
+      },
+      {
+        part_number: 6,
+        title: "Validate with Data",
+        time_estimate: "1 min",
+        what_you_say: "To validate, I'd look at: conversion rates of guest checkout on competitor sites, LTV of 'forced' registrations vs organic signups, and email engagement rates of checkout-captured emails.",
+        questions_to_ask: ["What's the email open rate from checkout signups?"],
+        thinking: "If forced registrations have low LTV anyway → we're losing sales for low-value email captures"
+      },
+      {
+        part_number: 7,
+        title: "Recommend Solution",
+        time_estimate: "1 min",
+        what_you_say: "My recommendation: Replace mandatory registration with guest checkout, add a soft prompt at confirmation ('Save info for faster checkout next time'). Track: conversion rate, optional signup rate, and 90-day repurchase rate.",
+        questions_to_ask: [],
+        thinking: "Guest checkout removes friction → optional signup captures willing users → better quality relationships"
+      }
     ],
+    pushback_scenarios: [
+      {
+        if_they_say: "But we'll lose email captures for marketing!",
+        you_say: "Let's look at what those captures are worth. If 45% abandon and never buy, and forced signups have lower engagement anyway, we may be optimizing for a vanity metric. I'd rather have 55% of customers buying than 100% of emails with low engagement."
+      },
+      {
+        if_they_say: "How do we know this will actually increase revenue?",
+        you_say: "I'd propose an A/B test: 50% see current mandatory registration, 50% see guest checkout. Primary metric is completed purchases. We can also track optional signup rate to see if we still capture emails from willing users."
+      },
+      {
+        if_they_say: "What about duplicate customer records?",
+        you_say: "That's a valid operational concern. We can match by email at the optional signup step, or implement email lookup before checkout. The database complexity is manageable compared to $300M in lost revenue."
+      }
+    ],
+    summary: {
+      approach: ["Clarify", "Scope", "Decompose", "Diagnose", "Theorize", "Validate", "Solve"],
+      key_insight: "Forced registration optimizes for email capture at the cost of completed sales—guest checkout with optional signup captures both willing customers and willing email subscribers."
+    },
+    interviewer_evaluation: [
+      "Structured approach to breaking down the funnel",
+      "Data-driven diagnosis of the core problem",
+      "Consideration of business stakeholder concerns",
+      "Clear articulation of trade-offs",
+      "Specific, measurable success metrics",
+      "Practical implementation recommendation",
+      "Anticipation of objections with data-backed responses"
+    ],
+    common_mistakes: [
+      "Jumping to solutions without understanding the data",
+      "Ignoring stakeholder concerns (marketing's email needs)",
+      "Not quantifying the business impact",
+      "Proposing changes without a test plan",
+      "Missing the 'forced vs earned' relationship insight",
+      "Over-engineering when a simple solution works"
+    ],
+    practice: {
+      question: "A SaaS product has 30% drop-off at the credit card entry step, even for a free trial. How would you investigate and solve this?",
+      guidance: "Apply the same Clarify → Scope → Decompose → Diagnose → Theorize → Validate → Solve flow. Consider: Why is a credit card required for a free trial? What signals trust? What's the competitor landscape?"
+    },
     source_type: "framework_classic",
     source_url: null,
     company_name: "Best Buy",
     industry: "E-commerce",
     difficulty: "intermediate",
-    question_type: "Product Improvement",
+    question_type: "Root Cause Analysis (RCA)",
     seniority_level: 1,
     frameworks_applicable: ["Funnel Analysis", "Customer Lifetime Value", "A/B Testing"],
     tags: ["conversion", "UX", "checkout", "growth"],
     asked_in_company: "Amazon",
-    charts: [
-      {
-        id: "chart-1",
-        type: "chart",
-        chart_type: "bar",
-        title: "Checkout Funnel Drop-off Rates",
-        caption: "User abandonment at each stage of the checkout process",
-        url: "https://quickchart.io/chart?c=%7B%22type%22%3A%22bar%22%2C%22data%22%3A%7B%22labels%22%3A%5B%22Cart%22%2C%22Registration%22%2C%22Payment%22%2C%22Confirmation%22%5D%2C%22datasets%22%3A%5B%7B%22label%22%3A%22Drop-off%20%25%22%2C%22data%22%3A%5B100%2C55%2C35%2C30%5D%2C%22backgroundColor%22%3A%22%234F46E5%22%7D%5D%7D%7D&w=600&h=400&bkg=white",
-        position: "after_story"
-      }
-    ],
+    charts: [],
     scheduled_date: new Date().toISOString().split('T')[0],
   }
 }
