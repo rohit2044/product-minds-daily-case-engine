@@ -6,13 +6,17 @@
  */
 
 import { createClient } from '@supabase/supabase-js';
-import crypto from 'crypto';
+
+// Validate required environment variables
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseKey = process.env.SUPABASE_SERVICE_KEY;
+
+if (!supabaseUrl || !supabaseKey) {
+  throw new Error('Missing required environment variables: SUPABASE_URL and/or SUPABASE_SERVICE_KEY');
+}
 
 // Initialize Supabase client
-const supabase = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_KEY
-);
+const supabase = createClient(supabaseUrl, supabaseKey);
 
 const QUICKCHART_BASE_URL = 'https://quickchart.io/chart';
 const STORAGE_BUCKET = 'case-study-charts';
@@ -146,11 +150,27 @@ async function generateChart(spec) {
     chartConfig.options.indexAxis = 'y';
   }
 
-  // Build QuickChart URL
-  const chartUrl = `${QUICKCHART_BASE_URL}?c=${encodeURIComponent(JSON.stringify(chartConfig))}&w=600&h=400&bkg=white&f=png`;
+  const configJson = JSON.stringify(chartConfig);
+  let response;
 
-  // Fetch the chart image
-  const response = await fetch(chartUrl);
+  // Use POST for large configurations to avoid URL length limits
+  if (configJson.length > 1500) {
+    response = await fetch(QUICKCHART_BASE_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chart: chartConfig,
+        width: 600,
+        height: 400,
+        backgroundColor: 'white',
+        format: 'png',
+      }),
+    });
+  } else {
+    const chartUrl = `${QUICKCHART_BASE_URL}?c=${encodeURIComponent(configJson)}&w=600&h=400&bkg=white&f=png`;
+    response = await fetch(chartUrl);
+  }
+
   if (!response.ok) {
     throw new Error(`QuickChart API error: ${response.status}`);
   }
@@ -382,10 +402,13 @@ async function uploadToStorage(fileName, data, contentType) {
     // If bucket doesn't exist, try to create it
     if (uploadError.message?.includes('Bucket not found')) {
       console.log('  📦 Creating storage bucket...');
-      await supabase.storage.createBucket(STORAGE_BUCKET, {
+      const { error: bucketError } = await supabase.storage.createBucket(STORAGE_BUCKET, {
         public: true,
-        fileSizeLimit: 5242880, // 5MB
+        fileSizeLimit: 5 * 1024 * 1024, // 5MB
       });
+      if (bucketError) {
+        throw new Error(`Failed to create storage bucket: ${bucketError.message}`);
+      }
       // Retry upload
       const { error: retryError } = await supabase.storage
         .from(STORAGE_BUCKET)

@@ -25,6 +25,14 @@ import { checkDuplication, generateEmbedding } from './utils/deduplication.js';
 import { generateVisuals } from './utils/chart-generator.js';
 import crypto from 'crypto';
 
+// Validate required environment variables
+const requiredEnvVars = ['GROQ_API_KEY', 'SUPABASE_URL', 'SUPABASE_SERVICE_KEY'];
+for (const envVar of requiredEnvVars) {
+  if (!process.env[envVar]) {
+    throw new Error(`Missing required environment variable: ${envVar}`);
+  }
+}
+
 // Initialize clients
 const groq = new Groq({
   apiKey: process.env.GROQ_API_KEY,
@@ -71,6 +79,11 @@ export async function generateDailyCases(options = {}) {
   const sourceConfig = forceSourceType
     ? Object.values(SOURCE_ROTATION).find(s => s.type === forceSourceType)
     : SOURCE_ROTATION[dayOfWeek];
+
+  if (!sourceConfig) {
+    const validTypes = Object.values(SOURCE_ROTATION).map(s => s.type).join(', ');
+    throw new Error(`Invalid source type: ${forceSourceType}. Valid types: ${validTypes}`);
+  }
 
   console.log(`\n🚀 Starting case generation`);
   console.log(`📅 Day of week: ${dayOfWeek} (${sourceConfig.name})`);
@@ -325,11 +338,15 @@ Generate a case study with the following structure. Respond ONLY with valid JSON
   const completionTokens = response.usage?.completion_tokens || 0;
   const tokensUsed = promptTokens + completionTokens;
 
-  // Calculate cost using Groq pricing
-  const costUsd = (promptTokens * MODEL_CONFIG.pricing.input + completionTokens * MODEL_CONFIG.pricing.output) / 1000;
+  // Calculate cost using Groq pricing (prices are per million tokens)
+  const costUsd = (promptTokens * MODEL_CONFIG.pricing.input + completionTokens * MODEL_CONFIG.pricing.output) / 1000000;
 
   // Parse the response
   const content = response.choices[0]?.message?.content;
+  if (!content) {
+    throw new Error('Empty response from LLM');
+  }
+
   let caseStudy;
 
   try {
@@ -364,6 +381,7 @@ async function createLogEntry(sourceType) {
     .from('generation_logs')
     .insert({
       status: 'processing',
+      source_type: sourceType,
     })
     .select()
     .single();
