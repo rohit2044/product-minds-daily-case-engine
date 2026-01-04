@@ -26,6 +26,7 @@ Deno.serve(async (req) => {
     const today = new Date().toISOString().split('T')[0]
 
     // Fetch today's case study with new template structure
+    // Filter out soft-deleted cases with deleted_at IS NULL
     const { data: caseStudy, error } = await supabase
       .from('case_studies')
       .select(`
@@ -52,10 +53,12 @@ Deno.serve(async (req) => {
         tags,
         asked_in_company,
         charts,
-        scheduled_date
+        scheduled_date,
+        current_version
       `)
       .eq('scheduled_date', today)
       .eq('is_published', true)
+      .is('deleted_at', null)
       .single()
 
     if (error || !caseStudy) {

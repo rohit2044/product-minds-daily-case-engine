@@ -1,13 +1,15 @@
 import 'dotenv/config';
 /**
  * Product Minds - Case Study Generator
- * 
+ *
  * Main orchestrator that:
  * 1. Determines which source to scrape based on day rotation
  * 2. Fetches raw content from the source
  * 3. Transforms it via Groq API (Llama) into a story-driven case study
  * 4. Checks for duplicates
  * 5. Stores in Supabase
+ *
+ * Uses image_prompt field for themed SVG image generation.
  */
 
 import Groq from 'groq-sdk';
@@ -20,10 +22,15 @@ import { fetchFromSECEdgar } from './sources/sec-edgar.js';
 import { fetchFromProductHunt } from './sources/producthunt.js';
 import { fetchFromArchiveOrg } from './sources/archive-org.js';
 import { generateFrameworkCase } from './sources/framework-cases.js';
-import { STORYTELLING_PROMPT } from './prompts/storytelling-system-prompt.js';
+import { assembleSystemPrompt, getPromptVersionHash } from './prompts/prompt-assembler.js';
+import { getGroqModel, getGroqMaxTokens, preloadConfigs } from './config/config-loader.js';
 import { checkDuplication, generateEmbedding } from './utils/deduplication.js';
-import { generateVisuals } from './utils/chart-generator.js';
+import { generateImageFromPrompt } from './utils/chart-generator.js';
 import crypto from 'crypto';
+
+// Cached prompt and version hash
+let cachedPrompt = null;
+let cachedPromptHash = null;
 
 // Validate required environment variables
 const requiredEnvVars = ['GROQ_API_KEY', 'SUPABASE_URL', 'SUPABASE_SERVICE_KEY'];
@@ -43,8 +50,8 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_KEY
 );
 
-// Model configuration
-const MODEL_CONFIG = {
+// Model configuration (defaults, can be overridden from DB)
+let MODEL_CONFIG = {
   model: process.env.GROQ_MODEL || 'llama-3.3-70b-versatile',
   maxTokens: 4000, // Increased for structured interview template output
   // Groq pricing for llama-3.3-70b-versatile
@@ -53,6 +60,55 @@ const MODEL_CONFIG = {
     output: 0.00079,  // $0.79 per million output tokens
   },
 };
+
+/**
+ * Load dynamic configuration from database
+ */
+async function loadDynamicConfig() {
+  try {
+    // Preload all configs into cache
+    await preloadConfigs();
+
+    // Get model configuration from DB (with fallbacks)
+    const [model, maxTokens] = await Promise.all([
+      getGroqModel(),
+      getGroqMaxTokens(),
+    ]);
+
+    MODEL_CONFIG.model = model;
+    MODEL_CONFIG.maxTokens = maxTokens;
+
+    console.log(`📋 Loaded dynamic config: model=${MODEL_CONFIG.model}, maxTokens=${MODEL_CONFIG.maxTokens}`);
+  } catch (error) {
+    console.warn(`⚠️ Failed to load dynamic config, using defaults: ${error.message}`);
+  }
+}
+
+/**
+ * Get the assembled system prompt (with caching)
+ */
+async function getSystemPrompt(sourceType) {
+  try {
+    // Assemble from database sections
+    const { prompt, versionHash, error } = await assembleSystemPrompt({ throwOnError: false });
+
+    if (error) {
+      throw new Error(error);
+    }
+
+    if (!prompt) {
+      throw new Error('Empty prompt returned from assembler');
+    }
+
+    cachedPrompt = prompt;
+    cachedPromptHash = versionHash;
+
+    return { prompt, versionHash };
+  } catch (error) {
+    console.error(`❌ Prompt assembly failed: ${error.message}`);
+    throw new Error(`Cannot generate cases without valid prompt configuration. Please run migrations to seed prompt sections. Error: ${error.message}`);
+  }
+}
 
 // Source rotation configuration
 const SOURCE_ROTATION = {
@@ -75,6 +131,9 @@ export async function generateDailyCases(options = {}) {
     dryRun = false,      // Don't save to database
   } = options;
 
+  // Load dynamic configuration from database
+  await loadDynamicConfig();
+
   const dayOfWeek = new Date().getDay();
   const sourceConfig = forceSourceType
     ? Object.values(SOURCE_ROTATION).find(s => s.type === forceSourceType)
@@ -85,10 +144,14 @@ export async function generateDailyCases(options = {}) {
     throw new Error(`Invalid source type: ${forceSourceType}. Valid types: ${validTypes}`);
   }
 
+  // Get the assembled prompt (from DB or fallback)
+  const { prompt: systemPrompt, versionHash: promptVersionHash } = await getSystemPrompt(sourceConfig.type);
+
   console.log(`\n🚀 Starting case generation`);
   console.log(`📅 Day of week: ${dayOfWeek} (${sourceConfig.name})`);
   console.log(`🎯 Target cases: ${count}`);
   console.log(`🤖 Using model: ${MODEL_CONFIG.model}`);
+  console.log(`📝 Prompt version: ${promptVersionHash.substring(0, 8)}...`);
   console.log(`${dryRun ? '🧪 DRY RUN MODE' : '💾 Will save to database'}\n`);
 
   const results = {
@@ -124,7 +187,7 @@ export async function generateDailyCases(options = {}) {
       // Step 2: Transform via Groq (Llama)
       console.log(`🤖 Transforming with ${MODEL_CONFIG.model}...`);
       const startTransform = Date.now();
-      const caseStudy = await transformToCaseStudy(rawContent, sourceConfig.type);
+      const caseStudy = await transformToCaseStudy(rawContent, sourceConfig.type, systemPrompt);
       const transformDuration = Date.now() - startTransform;
       console.log(`✅ Transformed in ${transformDuration}ms`);
 
@@ -157,16 +220,31 @@ export async function generateDailyCases(options = {}) {
         continue;
       }
 
-      // Step 4: Generate visuals (charts/illustrations)
+      // Step 4: Generate visuals from image_prompt
       console.log(`📊 Generating visuals...`);
       const tempCaseId = crypto.randomUUID(); // Temporary ID for storage path
       let generatedCharts = [];
-      try {
-        generatedCharts = await generateVisuals(caseStudy.visual_specs, tempCaseId);
-        console.log(`✅ Generated ${generatedCharts.length} visual(s)`);
-      } catch (visualError) {
-        console.warn(`⚠️ Visual generation failed (non-fatal):`, visualError.message);
-        // Continue without visuals - they're optional
+      const imagePrompt = caseStudy.image_prompt || '';
+
+      if (imagePrompt) {
+        try {
+          // Generate image from the image_prompt field
+          const generatedImage = await generateImageFromPrompt(
+            supabase,
+            tempCaseId,
+            imagePrompt,
+            caseStudy.title
+          );
+          if (generatedImage) {
+            generatedCharts = [generatedImage];
+          }
+          console.log(`✅ Generated ${generatedCharts.length} visual(s) from image_prompt`);
+        } catch (visualError) {
+          console.warn(`⚠️ Visual generation failed (non-fatal):`, visualError.message);
+          // Continue without visuals - they're optional
+        }
+      } else {
+        console.log(`⏭️ No image_prompt provided, skipping visual generation`);
       }
 
       // Step 5: Save to database
@@ -204,11 +282,17 @@ export async function generateDailyCases(options = {}) {
             frameworks_applicable: caseStudy.frameworks_applicable || [],
             tags: caseStudy.tags || [],
             asked_in_company: caseStudy.asked_in_company,
+            // Image generation - new fields
+            image_prompt: imagePrompt,
             charts: generatedCharts,
+            image_generation_status: generatedCharts.length > 0 ? 'completed' : 'pending',
             // Deduplication
             content_embedding: embedding,
             content_hash: contentHash,
             generation_log_id: logEntry.id,
+            // Version tracking
+            prompt_version_hash: promptVersionHash,
+            config_version_hash: promptVersionHash,
           })
           .select()
           .single();
@@ -269,8 +353,17 @@ export async function generateDailyCases(options = {}) {
 
 /**
  * Transform raw content into a case study using Groq (Llama)
+ * @param {Object} rawContent - Raw content from source
+ * @param {string} sourceType - Type of source
+ * @param {string} systemPrompt - The assembled system prompt (required)
  */
-async function transformToCaseStudy(rawContent, sourceType) {
+async function transformToCaseStudy(rawContent, sourceType, systemPrompt) {
+  if (!systemPrompt) {
+    throw new Error('System prompt is required for case transformation');
+  }
+
+  const promptToUse = systemPrompt;
+
   const sourceTypePromptAdditions = {
     'historical_wikipedia': `This is a HISTORICAL case. Write as if the reader is facing the decision at the time it happened.`,
     'historical_archive': `This is a HISTORICAL case from archived news. Emphasize the uncertainty that existed at the time.`,
@@ -304,7 +397,7 @@ Generate a structured case study following the system prompt format. Respond ONL
     messages: [
       {
         role: 'system',
-        content: STORYTELLING_PROMPT,
+        content: promptToUse,
       },
       {
         role: 'user',
