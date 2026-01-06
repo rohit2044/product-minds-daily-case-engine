@@ -28,21 +28,21 @@ const SOURCE_TYPES = [
 
 async function seed() {
   console.log('🌱 Seeding initial case studies...\n');
-  console.log('This will generate ~15 cases across all source types.');
-  console.log('Estimated time: 10-15 minutes');
+  console.log('This will generate 1 case per source type (7 total).');
+  console.log('Estimated time: 5-7 minutes');
 
   const results = {
     generated: 0,
     failed: 0,
     skipped: 0,
   };
-  
-  // Generate ~2 cases per source type (3 for framework_classic)
+
+  // Generate 1 case per source type
   for (const sourceType of SOURCE_TYPES) {
     console.log(`\n📂 Generating cases from: ${sourceType}`);
     console.log('─'.repeat(50));
-    
-    const casesPerType = sourceType === 'framework_classic' ? 3 : 2;
+
+    const casesPerType = 1;
     
     for (let i = 0; i < casesPerType; i++) {
       try {

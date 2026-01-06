@@ -1,13 +1,15 @@
 import 'dotenv/config';
 /**
  * Product Minds - Case Study Generator
- * 
+ *
  * Main orchestrator that:
  * 1. Determines which source to scrape based on day rotation
  * 2. Fetches raw content from the source
  * 3. Transforms it via Groq API (Llama) into a story-driven case study
  * 4. Checks for duplicates
  * 5. Stores in Supabase
+ *
+ * Uses image_prompt field for themed SVG image generation.
  */
 
 import Groq from 'groq-sdk';
@@ -20,10 +22,15 @@ import { fetchFromSECEdgar } from './sources/sec-edgar.js';
 import { fetchFromProductHunt } from './sources/producthunt.js';
 import { fetchFromArchiveOrg } from './sources/archive-org.js';
 import { generateFrameworkCase } from './sources/framework-cases.js';
-import { STORYTELLING_PROMPT } from './prompts/storytelling-system-prompt.js';
+import { assembleSystemPrompt, getPromptVersionHash } from './prompts/prompt-assembler.js';
+import { getGroqModel, getGroqMaxTokens, preloadConfigs } from './config/config-loader.js';
 import { checkDuplication, generateEmbedding } from './utils/deduplication.js';
-import { generateVisuals } from './utils/chart-generator.js';
+import { generateImageFromPrompt } from './utils/chart-generator.js';
 import crypto from 'crypto';
+
+// Cached prompt and version hash
+let cachedPrompt = null;
+let cachedPromptHash = null;
 
 // Validate required environment variables
 const requiredEnvVars = ['GROQ_API_KEY', 'SUPABASE_URL', 'SUPABASE_SERVICE_KEY'];
@@ -43,16 +50,65 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_KEY
 );
 
-// Model configuration
-const MODEL_CONFIG = {
+// Model configuration (defaults, can be overridden from DB)
+let MODEL_CONFIG = {
   model: process.env.GROQ_MODEL || 'llama-3.3-70b-versatile',
-  maxTokens: 1500,
+  maxTokens: 4000, // Increased for structured interview template output
   // Groq pricing for llama-3.3-70b-versatile
   pricing: {
     input: 0.00059,   // $0.59 per million input tokens
     output: 0.00079,  // $0.79 per million output tokens
   },
 };
+
+/**
+ * Load dynamic configuration from database
+ */
+async function loadDynamicConfig() {
+  try {
+    // Preload all configs into cache
+    await preloadConfigs();
+
+    // Get model configuration from DB (with fallbacks)
+    const [model, maxTokens] = await Promise.all([
+      getGroqModel(),
+      getGroqMaxTokens(),
+    ]);
+
+    MODEL_CONFIG.model = model;
+    MODEL_CONFIG.maxTokens = maxTokens;
+
+    console.log(`📋 Loaded dynamic config: model=${MODEL_CONFIG.model}, maxTokens=${MODEL_CONFIG.maxTokens}`);
+  } catch (error) {
+    console.warn(`⚠️ Failed to load dynamic config, using defaults: ${error.message}`);
+  }
+}
+
+/**
+ * Get the assembled system prompt (with caching)
+ */
+async function getSystemPrompt(sourceType) {
+  try {
+    // Assemble from database sections
+    const { prompt, versionHash, error } = await assembleSystemPrompt({ throwOnError: false });
+
+    if (error) {
+      throw new Error(error);
+    }
+
+    if (!prompt) {
+      throw new Error('Empty prompt returned from assembler');
+    }
+
+    cachedPrompt = prompt;
+    cachedPromptHash = versionHash;
+
+    return { prompt, versionHash };
+  } catch (error) {
+    console.error(`❌ Prompt assembly failed: ${error.message}`);
+    throw new Error(`Cannot generate cases without valid prompt configuration. Please run migrations to seed prompt sections. Error: ${error.message}`);
+  }
+}
 
 // Source rotation configuration
 const SOURCE_ROTATION = {
@@ -75,6 +131,9 @@ export async function generateDailyCases(options = {}) {
     dryRun = false,      // Don't save to database
   } = options;
 
+  // Load dynamic configuration from database
+  await loadDynamicConfig();
+
   const dayOfWeek = new Date().getDay();
   const sourceConfig = forceSourceType
     ? Object.values(SOURCE_ROTATION).find(s => s.type === forceSourceType)
@@ -85,10 +144,14 @@ export async function generateDailyCases(options = {}) {
     throw new Error(`Invalid source type: ${forceSourceType}. Valid types: ${validTypes}`);
   }
 
+  // Get the assembled prompt (from DB or fallback)
+  const { prompt: systemPrompt, versionHash: promptVersionHash } = await getSystemPrompt(sourceConfig.type);
+
   console.log(`\n🚀 Starting case generation`);
   console.log(`📅 Day of week: ${dayOfWeek} (${sourceConfig.name})`);
   console.log(`🎯 Target cases: ${count}`);
   console.log(`🤖 Using model: ${MODEL_CONFIG.model}`);
+  console.log(`📝 Prompt version: ${promptVersionHash.substring(0, 8)}...`);
   console.log(`${dryRun ? '🧪 DRY RUN MODE' : '💾 Will save to database'}\n`);
 
   const results = {
@@ -124,13 +187,15 @@ export async function generateDailyCases(options = {}) {
       // Step 2: Transform via Groq (Llama)
       console.log(`🤖 Transforming with ${MODEL_CONFIG.model}...`);
       const startTransform = Date.now();
-      const caseStudy = await transformToCaseStudy(rawContent, sourceConfig.type);
+      const caseStudy = await transformToCaseStudy(rawContent, sourceConfig.type, systemPrompt);
       const transformDuration = Date.now() - startTransform;
       console.log(`✅ Transformed in ${transformDuration}ms`);
 
       // Step 3: Check for duplicates
       console.log(`🔍 Checking for duplicates...`);
-      const embedding = await generateEmbedding(caseStudy.story_content);
+      // Use what_happened + the_question for deduplication embedding
+      const contentForEmbedding = `${caseStudy.what_happened} ${caseStudy.the_question}`;
+      const embedding = await generateEmbedding(contentForEmbedding);
       const duplicateCheck = await checkDuplication(
         supabase,
         embedding,
@@ -155,16 +220,31 @@ export async function generateDailyCases(options = {}) {
         continue;
       }
 
-      // Step 4: Generate visuals (charts/illustrations)
+      // Step 4: Generate visuals from image_prompt
       console.log(`📊 Generating visuals...`);
       const tempCaseId = crypto.randomUUID(); // Temporary ID for storage path
       let generatedCharts = [];
-      try {
-        generatedCharts = await generateVisuals(caseStudy.visual_specs, tempCaseId);
-        console.log(`✅ Generated ${generatedCharts.length} visual(s)`);
-      } catch (visualError) {
-        console.warn(`⚠️ Visual generation failed (non-fatal):`, visualError.message);
-        // Continue without visuals - they're optional
+      const imagePrompt = caseStudy.image_prompt || '';
+
+      if (imagePrompt) {
+        try {
+          // Generate image from the image_prompt field
+          const generatedImage = await generateImageFromPrompt(
+            supabase,
+            tempCaseId,
+            imagePrompt,
+            caseStudy.title
+          );
+          if (generatedImage) {
+            generatedCharts = [generatedImage];
+          }
+          console.log(`✅ Generated ${generatedCharts.length} visual(s) from image_prompt`);
+        } catch (visualError) {
+          console.warn(`⚠️ Visual generation failed (non-fatal):`, visualError.message);
+          // Continue without visuals - they're optional
+        }
+      } else {
+        console.log(`⏭️ No image_prompt provided, skipping visual generation`);
       }
 
       // Step 5: Save to database
@@ -172,17 +252,25 @@ export async function generateDailyCases(options = {}) {
         console.log(`💾 Saving to database...`);
         const contentHash = crypto
           .createHash('md5')
-          .update(caseStudy.story_content)
+          .update(contentForEmbedding)
           .digest('hex');
 
         const { data: savedCase, error } = await supabase
           .from('case_studies')
           .insert({
+            // Core content - new template structure
             title: caseStudy.title,
-            hook: caseStudy.hook,
-            story_content: caseStudy.story_content,
-            challenge_prompt: caseStudy.challenge_prompt,
-            hints: caseStudy.hints,
+            the_question: caseStudy.the_question,
+            read_time_minutes: caseStudy.read_time_minutes || 3,
+            what_happened: caseStudy.what_happened,
+            mental_model: caseStudy.mental_model,
+            answer_approach: caseStudy.answer_approach,
+            pushback_scenarios: caseStudy.pushback_scenarios,
+            summary: caseStudy.summary,
+            interviewer_evaluation: caseStudy.interviewer_evaluation || [],
+            common_mistakes: caseStudy.common_mistakes || [],
+            practice: caseStudy.practice,
+            // Metadata - preserved from original schema
             source_type: sourceConfig.type,
             source_url: rawContent.sourceUrl,
             source_title: rawContent.title,
@@ -191,13 +279,20 @@ export async function generateDailyCases(options = {}) {
             difficulty: caseStudy.difficulty,
             question_type: caseStudy.question_type,
             seniority_level: caseStudy.seniority_level,
-            frameworks_applicable: caseStudy.frameworks_applicable,
-            tags: caseStudy.tags,
+            frameworks_applicable: caseStudy.frameworks_applicable || [],
+            tags: caseStudy.tags || [],
             asked_in_company: caseStudy.asked_in_company,
+            // Image generation - new fields
+            image_prompt: imagePrompt,
             charts: generatedCharts,
+            image_generation_status: generatedCharts.length > 0 ? 'completed' : 'pending',
+            // Deduplication
             content_embedding: embedding,
             content_hash: contentHash,
             generation_log_id: logEntry.id,
+            // Version tracking
+            prompt_version_hash: promptVersionHash,
+            config_version_hash: promptVersionHash,
           })
           .select()
           .single();
@@ -258,8 +353,17 @@ export async function generateDailyCases(options = {}) {
 
 /**
  * Transform raw content into a case study using Groq (Llama)
+ * @param {Object} rawContent - Raw content from source
+ * @param {string} sourceType - Type of source
+ * @param {string} systemPrompt - The assembled system prompt (required)
  */
-async function transformToCaseStudy(rawContent, sourceType) {
+async function transformToCaseStudy(rawContent, sourceType, systemPrompt) {
+  if (!systemPrompt) {
+    throw new Error('System prompt is required for case transformation');
+  }
+
+  const promptToUse = systemPrompt;
+
   const sourceTypePromptAdditions = {
     'historical_wikipedia': `This is a HISTORICAL case. Write as if the reader is facing the decision at the time it happened.`,
     'historical_archive': `This is a HISTORICAL case from archived news. Emphasize the uncertainty that existed at the time.`,
@@ -271,7 +375,7 @@ async function transformToCaseStudy(rawContent, sourceType) {
     'framework_classic': `This is a CLASSIC PM FRAMEWORK case. Add a modern twist while teaching the framework.`,
   };
 
-  const userPrompt = `Transform the following raw content into an engaging PM case study.
+  const userPrompt = `Transform the following raw content into an interview-ready PM case study.
 
 SOURCE TYPE: ${sourceType}
 COMPANY/SUBJECT: ${rawContent.companyName || 'Unknown'}
@@ -283,36 +387,7 @@ ${rawContent.content}
 
 ${sourceTypePromptAdditions[sourceType] || ''}
 
-Generate a case study with the following structure. Respond ONLY with valid JSON:
-
-{
-  "title": "A compelling, slightly provocative title",
-  "hook": "Opening 1-2 sentences that grab attention",
-  "story_content": "The main narrative (400-600 words, NO bullet points)",
-  "challenge_prompt": "The question for the reader (50-100 words)",
-  "hints": ["hint1", "hint2"],
-  "difficulty": "beginner|intermediate|advanced",
-  "question_type": "One of: Root Cause Analysis (RCA), Product Design (Open-ended), Metrics & Measurement, Feature Prioritization, Strategy & Vision, Pricing Strategy, Launch Decision, Growth Strategy, Trade-off Analysis, A/B Test Design",
-  "seniority_level": 0-3 (0=Entry-level/APM, 1=Mid-level PM, 2=Senior PM, 3=Lead/Principal/Director+),
-  "frameworks_applicable": ["Framework1", "Framework2"],
-  "industry": "Industry category",
-  "tags": ["tag1", "tag2", "tag3"],
-  "company_name": "Company name if identifiable",
-  "asked_in_company": "Tech company where this case type is likely asked (Google, Meta, Amazon, Apple, Microsoft, Netflix, Uber, Airbnb, Stripe, etc.) or null",
-  "visual_specs": [
-    {
-      "visual_type": "chart or illustration",
-      "chart_type": "bar|line|doughnut|horizontalBar|radar (if visual_type is chart)",
-      "illustration_type": "abstract|icon_composition|gradient_scene (if visual_type is illustration)",
-      "title": "Title for the visual",
-      "caption": "Brief description of what this visual shows",
-      "labels": ["Label1", "Label2"] (for charts),
-      "datasets": [{"label": "Series", "data": [10, 20, 30]}] (for charts),
-      "colors": ["#hex1", "#hex2"] (suggested colors),
-      "description": "For illustrations: mood, elements, style description"
-    }
-  ]
-}`;
+Generate a structured case study following the system prompt format. Respond ONLY with valid JSON.`;
 
   const startTime = Date.now();
 
@@ -322,7 +397,7 @@ Generate a case study with the following structure. Respond ONLY with valid JSON
     messages: [
       {
         role: 'system',
-        content: STORYTELLING_PROMPT,
+        content: promptToUse,
       },
       {
         role: 'user',
