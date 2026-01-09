@@ -12,7 +12,11 @@
     "schedule": "node scripts/schedule-cases.js",
     "report": "node scripts/report-status.js",
     "seed": "node scripts/seed-initial-cases.js",
-    "test:sources": "node scripts/test-sources.js"
+    "test:sources": "node scripts/test-sources.js",
+    "backfill-images": "node scripts/backfill-images.js",
+    "backfill-images:dry": "node scripts/backfill-images.js --dry-run",
+    "backfill-images:all": "node scripts/backfill-images.js --all",
+    "backfill-images:failed": "node scripts/backfill-images.js --failed"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.0",

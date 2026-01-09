@@ -25,7 +25,7 @@ import { generateFrameworkCase } from './sources/framework-cases.js';
 import { assembleSystemPrompt, getPromptVersionHash } from './prompts/prompt-assembler.js';
 import { getGroqModel, getGroqMaxTokens, preloadConfigs } from './config/config-loader.js';
 import { checkDuplication, generateEmbedding } from './utils/deduplication.js';
-import { generateImageFromPrompt } from './utils/chart-generator.js';
+import { generateIntelligentChart, deleteExistingVisuals } from './utils/intelligent-chart-generator.js';
 import crypto from 'crypto';
 
 // Cached prompt and version hash
@@ -220,31 +220,37 @@ export async function generateDailyCases(options = {}) {
         continue;
       }
 
-      // Step 4: Generate visuals from image_prompt
-      console.log(`📊 Generating visuals...`);
+      // Step 4: Generate visuals using intelligent chart generator
+      console.log(`📊 Generating intelligent visuals...`);
       const tempCaseId = crypto.randomUUID(); // Temporary ID for storage path
       let generatedCharts = [];
       const imagePrompt = caseStudy.image_prompt || '';
 
-      if (imagePrompt) {
-        try {
-          // Generate image from the image_prompt field
-          const generatedImage = await generateImageFromPrompt(
-            supabase,
-            tempCaseId,
-            imagePrompt,
-            caseStudy.title
-          );
-          if (generatedImage) {
-            generatedCharts = [generatedImage];
+      try {
+        // Generate intelligent chart based on case study content
+        const generatedChart = await generateIntelligentChart(
+          supabase,
+          tempCaseId,
+          {
+            title: caseStudy.title,
+            company_name: caseStudy.company_name,
+            industry: caseStudy.industry,
+            question_type: caseStudy.question_type,
+            the_question: caseStudy.the_question,
+            what_happened: caseStudy.what_happened,
+            mental_model: caseStudy.mental_model,
+            summary: caseStudy.summary,
+            tags: caseStudy.tags,
+            image_prompt: imagePrompt,
           }
-          console.log(`✅ Generated ${generatedCharts.length} visual(s) from image_prompt`);
-        } catch (visualError) {
-          console.warn(`⚠️ Visual generation failed (non-fatal):`, visualError.message);
-          // Continue without visuals - they're optional
+        );
+        if (generatedChart) {
+          generatedCharts = [generatedChart];
         }
-      } else {
-        console.log(`⏭️ No image_prompt provided, skipping visual generation`);
+        console.log(`✅ Generated ${generatedCharts.length} intelligent visual(s)`);
+      } catch (visualError) {
+        console.warn(`⚠️ Visual generation failed (non-fatal):`, visualError.message);
+        // Continue without visuals - they're optional
       }
 
       // Step 5: Save to database
